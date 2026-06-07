@@ -1,0 +1,6 @@
+_build/
+.venv/
+.embedder/
+__pycache__/
+*.pyc
+.DS_Store

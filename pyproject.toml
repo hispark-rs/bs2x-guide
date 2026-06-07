@@ -1,0 +1,16 @@
+[project]
+name = "bs2x-user-guide"
+version = "00"
+description = "HiSilicon BS21 / BS2X 系列 SoC（BLE 5.4 + SLE/NearLink）— 用户指南"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "myst-parser>=4.0",
+    "sphinx>=8.0,<9.0",
+    "sphinx-book-theme>=1.1,<2.0",
+    "sphinxcontrib-mermaid>=0.9",
+]
+
+[tool.uv]
+package = false
+dev-dependencies = []
