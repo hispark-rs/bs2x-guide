@@ -54,8 +54,12 @@ flashboot 镜像头 `0x4b1e3c1e`(=ImageId)/ code-info `0x4b1e3c2d`(代码 `0x8ab
 然后 flashboot 经 **XIP @`0x90100000`** 读分区表,校验首字魔数 `0x4b87a52d`。**已建模**:`bs21.c` 加 `flash1` RAM 窗 @`0x90100000`,
 载入预编译 `partition.bin`(魔数在偏移 0)后,flashboot **跨过魔数、跑进主逻辑 ~940 条(4×)**——解析分区表、跑主流程,再停在新的空转点 `0x4293a`。
 复现:`bs21-vendor-boot.sh flashboot_sign_a.bin 5 0x40000 partition.bin`。
-**下一道 = app 镜像**:分区表指向各 flash 偏移(0x1000/0xa000/0x88000…)的固件分区;把全固件填进 flash1,flashboot 才能载入并跳到 app
-(而 app 是完整 LiteOS BLE/SLE,真正跑它属连接性大工程)。M1 + 5/5 WS63 qtest 全程不回归。
+**全固件镜像已就位**:`bs21-build-flash.sh` 解包 `bs21e_all.fwpkg`(loaderboot/partition/flashboot_a+b/**application**/nv),
+按分区表偏移摆放(app @0x15000 → XIP 0x90115000),boot 脚本分块装到 0x90100000(generic loader 单次裸装上限 ~0x10000)。
+flashboot 在全固件下仍跑那 940 条。**当前关口 = 解析后的 boot-mode/错误判定**:flashboot **关中断**(mstatus=0/mie=0),
+解析完分区表后跳到 `0x4293a` 硬空转,且**有无 app 都跑同样 940 条**——说明它在**读 app 之前**就走了错误/等待路径
+(很可能像 loaderboot 一样默认进下载模式)。flashboot 主逻辑在 ROM/预编译库里(无源码),越过这道关需要定位它查的那个
+boot-mode/状态条件——这之后才会真正载入并跳到 app(而跑起 LiteOS BLE/SLE app 是更大的连接性工程)。M1 + 5/5 WS63 qtest 全程不回归。
 
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
