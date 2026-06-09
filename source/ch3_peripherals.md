@@ -32,14 +32,17 @@ WS63 没有、由 `fbb_bs2x` SDK 的 HAL 寄存器头文件派生进 `BS2X.svd` 
 | KEYSCAN | `0x5208_D000` | v150 | KEY_SCAN_LOW_POWER=38, KEY_SCAN=46 |
 | PDM | `0x5208_E000` | v150 | PDM=44 |
 | QDEC | `0x5200_0200` | v150 | QDEC=88 |
+| **USB**（USB 2.0 OTG，DWC OTG） | `0x5800_0000` | Synopsys DWC | USB=89 |
 
-这 4 个由 `bs2x-svd/tools/derive_bs2x_specific.py` 解析 `hal_<p>_v<NN>_regs_def.h`
-的寄存器块 + 位域生成（`bs2x-pac` 含 `Gadc`/`Keyscan`/`Pdm`/`Qdec` 类型与寄存器）。
+GADC/KEYSCAN/PDM/QDEC 由 `bs2x-svd/tools/derive_bs2x_specific.py` 解析 `hal_<p>_v<NN>_regs_def.h`
+的寄存器块 + 位域生成。**USB** 解析 `dwc_otgreg.h` 的 `#define DOTG_<REG>` 偏移定义,生成 49 个寄存器
+（寄存器级,该头无位域分解）。`bs2x-pac` 含 `Gadc`/`Keyscan`/`Pdm`/`Qdec`/`Usb` 类型。
+`hisi-riscv-qemu` 的 `-M bs21` 为 USB 窗(`0x5800_0000`)加了吸收器。
 
 ## 3.3 仍推后
 
-**USB 2.0 / NFC**（IRQ 89 / 69）在 SDK 的 HAL 树里没有简单寄存器块头（复杂子系统），
-暂作 GLB_CTL_M 上的中断保留；GLB_CTL_A/D、PMU1/PMU2_CMU、ULP_AON、FUSE 等电源/时钟控制块同理逐步补全。
+**NFC**（IRQ 69）在 SDK 的 HAL 树里没有简单寄存器块头（复杂子系统）,暂作 GLB_CTL_M 上的中断保留;
+GLB_CTL_A/D、PMU1/PMU2_CMU、ULP_AON、FUSE 等电源/时钟控制块同理逐步补全。
 
 ## 3.4 M1 用到的子集
 
