@@ -72,6 +72,21 @@ BS2X 的 linx131 == WS63 xlinx,同一套 ISA)重新反汇编看清:
   SDK 只给 `librom_callback.a`+`.sym`(无 ROM 镜像),故后续路 = **模拟 BS21 掩膜 ROM**(造签名/表 + 扩 `bs21_rom_call`),与 WS63 ROM-on-QEMU 同量级,属推后的连接性工程。
   **不是**单个寄存器能搞定的 boot-mode 标志。M1 + 5/5 WS63 qtest 全程不回归(本轮纯调查,未改 QEMU 源码)。
 
+### flashboot 跑过签名校验、打印 banner(2026-06-09)
+
+两处 `bs21.c` 本地改动把 flashboot 从 `0x4293a` 崩溃推到**完整跑完 init、串口打印 banner**(2953 条,原 723):
+- **掩膜 ROM 签名建模**:`bs21.c` 在机器初始化时把 `*(0x10020)=0xd4818193` 写进 RAM 化的 ROM 区(可扩展的 `rom_data[]` 表),签名校验原生通过(不再需要 `-device loader` 注入)。
+- **TCXO 碰撞修复**:共享 `ws63-tcxo` 映在 `0x57000200`、区域 0x1000(WS63 布局,那里 TCXO 独占 0x44000000),在 BS21 上吞掉了整个 GLB_CTL_A/D,且对 flashboot 读 `0x570004a0` 的 2 字节访问**触发取数异常**(TCXO ops 要求 4 字节)。按 SDK(`TCXO_COUNT_BASE_ADDR 0x57000200`、`GLB_CTL_A 0x57000400`)计数块只有 0x200,故 `bs21.c` 只 alias `BS21_TCXO_SIZE`(0x200),GLB_CTL_A/D 落回吸收器;BS21 的 TCXO_COUNT 在区域**基址**(偏移 0)而非 WS63 的 +0x4C0,新加 `ws63_tcxo_set_count_off(tcxo,0)`(`hisi_riscv31.h`)把状态/lo/hi 指过去——count-valid 轮询通过(BS21 `uart_hello` 的 tick 计数也随之读对)。WS63 仍默认 0x4C0,5/5 qtest 不回归。
+
+flashboot 现打印:
+
+```
+Flashboot Init! id = 0x0 / Power On / Reboot cause:0xF0F0 / Reboot count:0x0
+Flash Init ret = 0x80001341 / Load App Failed!
+```
+
+**下一关 = SFC/flash 检测(Flash Init)**:flashboot 的 flash-init 调 SFC 检测例程 `0x434c2`(读 flash 设备结构 `0x20001d50` + SFC 状态 `0x90000300`),置位 DTCM 错误标志 `*(0x20001d69)` → 加载硬编码错误 `0x80001341`(@`0x42138`)→ "Load App Failed!"。`ws63-sfc` v150 对 RDID 回 W25Q16 ID,但不满足 flashboot 完整的 flash 检测/状态序列——把它补全(让错误标志不置位)是 flashboot 读取并跳转 app(XIP `0x90115000`)前的下一步。
+
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
 BS21 ROM 调用拦截器已落地(镜像 `ws63_rom_call`,按不相交 PC 区间分发):模拟 BS2X 启动阶段调用的 secure-libc
