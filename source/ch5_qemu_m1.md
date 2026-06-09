@@ -30,9 +30,26 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 # => BS21 SMOKE TEST: PASS
 ```
 
-## 5.4 原厂固件在 QEMU 上（勘察结论 + 路线）
+## 5.4 原厂固件在 QEMU 上（loaderboot 已跑起来）
 
-目标:像 WS63 那样在 `-M ws63` 跑厂商 C SDK 固件,在 `-M bs21` 上跑 **BS2X 原厂固件**。已核实的事实与边界:
+目标:像 WS63 那样在 `-M ws63` 跑厂商 C SDK 固件,在 `-M bs21` 上跑 **BS2X 原厂固件**。
+
+> **进展(已达成)**:fbb_bs2x 预编译 **loaderboot 在 `-M bs21` 上已执行** ——
+> `hisi-riscv-qemu/scripts/bs21-vendor-boot.sh` 解开签名镜像、把代码装到 `0x40000` 运行,
+> 跑完约 **480 条**真实厂商代码(把启动参数块搬到 DTCM、拉起 PMU `0x57004600`),进入其
+> 下载模式空转(`j .` @0x4298e),**0 条非法指令**——xlinx 解码器(经 ws63 CPU 型号对 `-M bs21` 生效)透明处理。
+> 详见 `hisi-riscv-qemu/docs/bs21-vendor-firmware.md`。
+>
+> **跑通过程中修了一个真 bug**:loaderboot 把启动参数搬到 `0x20000000`(真实 BS21 DTCM,`APP_DTCM_ORIGIN`),
+> 而 `bs21.c` 原先把 DTCM 错放在 `0xF0000` → 写 `0x20002d50` 时 fault。已修正(DTCM→`0x20000000`;M1 + 5/5 WS63 qtest 不回归)。
+
+### 签名镜像格式(已破解 loaderboot)
+
+多段式:`0x000` 镜像头(魔数 `0x4bd2f01e`,头长 `0x40`)+ pad;`0x100` code-info 头(魔数 `0x4bd2f02d`,
+代码大小 = code-info+`0x24` 处的 u32);尾部是代码(`code_size` 字节,到 EOF)。loaderboot:`0x5c20` 字节 @ 文件 `0x300`。
+flashboot 用**另一种**格式(魔数=ImageId `0x4b1e3c1e`、code-info 作尾部 trailer `0x4b1e3c2d`),尚未破解。
+
+### 已核实的事实与剩余边界:
 
 **已就位的地基**
 - **xlinx 解码器对 `-M bs21` 已生效**:解码 hook 在 `target/riscv`(0001 patch),按 `ws63` CPU 型号触发;`bs21.c` 用的就是 `ws63` CPU,故无需额外改动即可解码 xlinx。
