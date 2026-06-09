@@ -96,6 +96,10 @@ Flash Init ret = 0x0 / No need to upgrade / Jump to addr = 0x90115300
 
 flashboot 的 **flash 检测 ✓、升级版本校验 ✓、载入并跳转 app @0x90115300 ✓**;app 的 RTOS 启动随即从 XIP 执行(设 `mtvec`、清 `mstatus`/`mie`、配 LOCI 自定义 CSR `0x7c2`/`0x7c3`、`gp` 指到 DTCM `0x2000369c`)。**flashboot 的任务已完成**。复现:`bs21-vendor-boot.sh flashboot_sign_a.bin 8 0x40000 <full-flash.bin>`(第 4 参数 = `bs21-build-flash.sh` 出的镜像)。BS2X 原厂启动链(loaderboot → flashboot → app)在 `-M bs21` 上已**端到端打通到 app 交接**;再往后跑完整 LiteOS BLE/SLE app 是更大的连接性工程(全内存图 / RAM 初始化 / 全外设)。WS63 5/5 + BS21 M1 不回归。
 
+### app(LiteOS)启动:xlinx prefd 解码,跑进 init-call 表(2026-06-09)
+
+flashboot 跳到 app 后,LiteOS 启动只跑 21 条就 trap(mcause=2)在 `.data` 拷贝循环的 `prefd`(`0x0003300b`)上——xlinx opcode 0x0b funct3=3,一条缓存预取提示,解码器原把全部 0x0b 当 ldmia/stmia(funct3 0/1),prefd 匹配不到寄存器位 → illegal → 跳到 app 的 `mtvec`(0x44330,ITCM)跑到 flashboot 残留 → 空转。给 opcode 0x0b 加 funct3 分派:**f3 2/3 = pref/prefd → NOP**(预取无体系结构副作用),f3 0/1 仍是 ldmia/stmia。这样 app 的 `ldmia`/`stmia` 块拷贝跑通,app 执行 **934 条**真实 LiteOS 启动(拷 `.data` flash→DTCM、设 gp/sp、早期 init),跑进它的 **init-call 表**(11 个函数指针 @0x90115a10..0x90115a3c)。**下一关**:init `table[9]`(0x90118a3a,一个 LiteOS 任务/线程注册——入口 0x90118cfe、栈 1536、优先级 31,经创建器 0x90118a2a)返回错误 **0x2000209** → app 打日志后停在 `0x90128c62 (j .)`。这已是 LiteOS 内核 bring-up(任务创建/调度器/内存池,再到 BLE/SLE 栈)——属更大的连接性工程,每个 init level 都要喂饱其子系统。WS63 5/5 + BS21 M1 不回归。
+
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
 BS21 ROM 调用拦截器已落地(镜像 `ws63_rom_call`,按不相交 PC 区间分发):模拟 BS2X 启动阶段调用的 secure-libc
