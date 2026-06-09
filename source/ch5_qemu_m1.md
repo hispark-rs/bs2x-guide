@@ -30,7 +30,24 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 # => BS21 SMOKE TEST: PASS
 ```
 
-## 5.4 后续（随连接性）
+## 5.4 原厂固件在 QEMU 上（勘察结论 + 路线）
 
-linx131 自定义 ISA 解码、ROM 拦截、全外设对齐（USB/NFC/PDM/QDEC/KEYSCAN/13-bit GADC、64 MHz 时钟树）、
-BLE/SLE 厂商 blob、`BS2X.svd` 外设补全。
+目标:像 WS63 那样在 `-M ws63` 跑厂商 C SDK 固件,在 `-M bs21` 上跑 **BS2X 原厂固件**。已核实的事实与边界:
+
+**已就位的地基**
+- **xlinx 解码器对 `-M bs21` 已生效**:解码 hook 在 `target/riscv`(0001 patch),按 `ws63` CPU 型号触发;`bs21.c` 用的就是 `ws63` CPU,故无需额外改动即可解码 xlinx。
+- **BS2X 固件确实用 linx131 = xlinx**(同一套自定义 ISA):SDK 有 `arch/riscv/src/linx131/custom.cmake`,用厂商 gcc(`cc_riscv32_musl_fp`)+ `-Wa,-mcjal-expand`,与 WS63 同源。
+- **预编译固件已取**:`src/interim_binary/bs21e/bin/boot_bin/{loaderboot,flashboot}_sign*.bin`(签名镜像)。
+- **ROM 表可得**:`src/drivers/chips/bs2x/rom/rom_info/.../librom_callback.a` + 符号(如 `memset_s=0x3d80c`,落在 ROM 区 `0x0–0x80000`),对应 WS63 的 `acore.sym`。
+- 启动握手(a0=启动参数指针)与 WS63 一致,`bs21.c` 已就位。
+
+**剩余边界(= 推后的连接性工作,多日量级)**
+- **签名镜像解包**:`*_sign.bin` 有嵌套头(外层魔数 `0x4bd2f01e`,内层还有一层),真实代码偏移/装载地址需按 sign-tool 规格解析。直接把 `+0x40` 之后的内容裸装到 `0x10000000` 运行 → 立即落到 `0000`(illegal)死循环,印证缺装载语义。
+- **掩膜 ROM**:正常由 mask ROM 校验+装载镜像并提供 ROM 函数;`-M bs21` 的 `0x0–0x80000` 是清零 RAM,flashboot 一旦 call ROM 函数(`memset_s@0x3d80c`…)就会执行到零 → fault。需 **BS21 ROM 调用表**(类似 WS63 的 `ws63_rom_call`,但地址/函数是 BS21 的)。
+- **SFC/flash** 未建模。
+
+**路线(镜像 WS63 的 csdk-on-qemu 之旅)**:① 从 `librom_callback.a`/符号表提取 BS21 ROM 表 → 在 `bs21.c` 注册 ROM-ABI 回调(机器侧,复用 0001 重构的框架);② 解析签名镜像头得到装载地址、或从 SDK 源构建出 ELF fixture;③ 补 SFC + mask-ROM 桩。M1 已证明 CPU+内存+UART+GPIO+xlinx 这条链是通的;原厂固件差的就是 ROM 表 + 镜像装载。
+
+## 5.5 其它后续（随连接性）
+
+全外设 64 MHz 时钟树对齐、BLE/SLE 厂商 blob、`BS2X.svd` 余下外设(NFC、GADC 的 AFE/PMU/DIAG 子块、电源/时钟控制块)补全。
