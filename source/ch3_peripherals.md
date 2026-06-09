@@ -22,12 +22,26 @@
 | RTC | `0x5702_4000` | 4 个 | RTC_0-3 = 49-52 |
 | TRNG/SEC | `0x5200_9000` | 安全/随机数 | SEC=70 |
 
-## 3.2 BS21 专属外设（随连接性补全）
+## 3.2 BS21 专属外设（已建模）
 
-WS63 没有、待补进 `BS2X.svd` 的：**USB 2.0、NFC、PDM、QDEC、KEYSCAN、13-bit GADC**，
-以及 GLB_CTL_A/D、PMU1/PMU2_CMU、ULP_AON、FUSE 等电源/时钟控制块。
+WS63 没有、由 `fbb_bs2x` SDK 的 HAL 寄存器头文件派生进 `BS2X.svd` 的：
 
-## 3.3 M1 用到的子集
+| 外设 | 基址 | IP | IRQ |
+|---|---|---|---|
+| GADC（13-bit ADC） | `0x5703_6000` | v153 | GADC_DONE=28, GADC_ALARM=29 |
+| KEYSCAN | `0x5208_D000` | v150 | KEY_SCAN_LOW_POWER=38, KEY_SCAN=46 |
+| PDM | `0x5208_E000` | v150 | PDM=44 |
+| QDEC | `0x5200_0200` | v150 | QDEC=88 |
+
+这 4 个由 `bs2x-svd/tools/derive_bs2x_specific.py` 解析 `hal_<p>_v<NN>_regs_def.h`
+的寄存器块 + 位域生成（`bs2x-pac` 含 `Gadc`/`Keyscan`/`Pdm`/`Qdec` 类型与寄存器）。
+
+## 3.3 仍推后
+
+**USB 2.0 / NFC**（IRQ 89 / 69）在 SDK 的 HAL 树里没有简单寄存器块头（复杂子系统），
+暂作 GLB_CTL_M 上的中断保留；GLB_CTL_A/D、PMU1/PMU2_CMU、ULP_AON、FUSE 等电源/时钟控制块同理逐步补全。
+
+## 3.4 M1 用到的子集
 
 里程碑 1 的 `blinky` 只用 GPIO0 引脚 0（`0x5701_0000`），`uart_hello` 只用 UART0（`0x5208_1000`）；
 两者均不初始化时钟树、不触发中断，故 QEMU `-M bs21` 仅需 GPIO + UART 模型 + 内存 + 吸收器即可跑通。
