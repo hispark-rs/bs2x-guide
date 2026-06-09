@@ -50,9 +50,12 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 flashboot 镜像头 `0x4b1e3c1e`(=ImageId)/ code-info `0x4b1e3c2d`(代码 `0x8ab0` @ `0x300`)。`bs21-vendor-boot.sh` 两种都认。
 
 **flashboot 也跑起来了**:同样链接到 `0x40000`,跑 ~206 条(复位 → ULP_AON 时钟配置 `0x5702c***` → 清零/重定位循环 → 主代码 `0x40552`),
-随后在碰 **SFC(串行 Flash 控制器 @`0x90000000`)** 时早停(`j .` @0x40120)——它写 `0x509` 到 `0x90000210`、调 SFC 例程 `0x4097a`,
-但 SFC/flash 未建模 → 读回垃圾 → 停。flashboot 源码(`flashboot_init` + `usb_download` + `upgrade_version_check`)印证它早期就读 flash。
-**下一道边界 = SFC 模型**(`0x90000000`,v150),建好后 flashboot 才能载入应用并打印 banner。
+随后在碰 **SFC(串行 Flash 控制器 @`0x90000000`)** 时早停——它要先认 flash。**已建模**:把 WS63 的 `ws63-sfc`(v150,RDID→JEDEC ID)映射到 `0x90000000`。
+然后 flashboot 经 **XIP @`0x90100000`** 读分区表,校验首字魔数 `0x4b87a52d`。**已建模**:`bs21.c` 加 `flash1` RAM 窗 @`0x90100000`,
+载入预编译 `partition.bin`(魔数在偏移 0)后,flashboot **跨过魔数、跑进主逻辑 ~940 条(4×)**——解析分区表、跑主流程,再停在新的空转点 `0x4293a`。
+复现:`bs21-vendor-boot.sh flashboot_sign_a.bin 5 0x40000 partition.bin`。
+**下一道 = app 镜像**:分区表指向各 flash 偏移(0x1000/0xa000/0x88000…)的固件分区;把全固件填进 flash1,flashboot 才能载入并跳到 app
+(而 app 是完整 LiteOS BLE/SLE,真正跑它属连接性大工程)。M1 + 5/5 WS63 qtest 全程不回归。
 
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
