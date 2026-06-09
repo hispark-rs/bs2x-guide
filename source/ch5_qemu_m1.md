@@ -56,10 +56,21 @@ flashboot 镜像头 `0x4b1e3c1e`(=ImageId)/ code-info `0x4b1e3c2d`(代码 `0x8ab
 复现:`bs21-vendor-boot.sh flashboot_sign_a.bin 5 0x40000 partition.bin`。
 **全固件镜像已就位**:`bs21-build-flash.sh` 解包 `bs21e_all.fwpkg`(loaderboot/partition/flashboot_a+b/**application**/nv),
 按分区表偏移摆放(app @0x15000 → XIP 0x90115000),boot 脚本分块装到 0x90100000(generic loader 单次裸装上限 ~0x10000)。
-flashboot 在全固件下仍跑那 940 条。**当前关口 = 解析后的 boot-mode/错误判定**:flashboot **关中断**(mstatus=0/mie=0),
-解析完分区表后跳到 `0x4293a` 硬空转,且**有无 app 都跑同样 940 条**——说明它在**读 app 之前**就走了错误/等待路径
-(很可能像 loaderboot 一样默认进下载模式)。flashboot 主逻辑在 ROM/预编译库里(无源码),越过这道关需要定位它查的那个
-boot-mode/状态条件——这之后才会真正载入并跳到 app(而跑起 LiteOS BLE/SLE app 是更大的连接性工程)。M1 + 5/5 WS63 qtest 全程不回归。
+flashboot 在全固件下仍跑那 940 条。
+
+**`0x4293a` 已破解(2026-06-09):它不是 boot-mode 判定,而是缺失 BS21 掩膜 ROM 导致的崩溃。**
+此前"解析后 boot-mode 判定"的猜测是**错的**——根因是 objdump 误解码 xlinx。用**厂商 xlinx 感知的 objdump**
+(`fbb_ws63/.../cc_riscv32_musl_fp/bin/riscv32-linux-musl-objdump -b binary -m riscv:rv32 -D --adjust-vma=0x40000`;
+BS2X 的 linx131 == WS63 xlinx,同一套 ISA)重新反汇编看清:
+- `0x4293a` 是 flashboot 的 **panic 尾**:`irq_lock()` → 把原因 `0xdeadbeaf` 记到 DTCM `0x2000ffe8` → 清 `BOOT_PORTING_RESET_REG`(0x57004600)bit0 → `j .`;
+  由 flashboot 的**异常处理程序**(`mtvec=0x47bbc`,printf 打 `exception:/mepc=/mcause=/mtval=/...`)进入。即 flashboot **先 trap、再 panic**。
+- **第一次 trap:`mcause=0x2`(非法指令)、`mepc=0`。** flashboot 校验掩膜 ROM 签名:`0x43c8a` 读 `*(0x10020)`,`bne a4, 0xd4818193, 0x4403a`。
+  `-M bs21` 的 ROM 区(0x10000–0x40000)是**清零 RAM**(无 ROM dump),`*(0x10020)=0 ≠ 0xd4818193` → 在 `0x4403a` 以 **ra=0** 做 `ret` → 跳到 PC 0 → 非法指令陷阱。
+- **验证**:注入魔数 `-device loader,addr=0x10020`(值 0xd4818193)后,flashboot **不再跳崩溃路径**、走通 magic-OK 分支(0x43c98)、多跑到 1260 条,
+  再在更深处崩溃(`mcause=0x5` 取数访问异常 @`0x570004a0`)——说明 flashboot 有**多处**掩膜 ROM/外设依赖,魔数只是第一道。
+- **结论**:与 WS63 同理,flashboot 与硅上掩膜 ROM 紧耦合(签名 + ROM 数据表 + 它 tail-call 并回注回调的 ROM 函数,如 ROM 地址 0x1c200)。
+  SDK 只给 `librom_callback.a`+`.sym`(无 ROM 镜像),故后续路 = **模拟 BS21 掩膜 ROM**(造签名/表 + 扩 `bs21_rom_call`),与 WS63 ROM-on-QEMU 同量级,属推后的连接性工程。
+  **不是**单个寄存器能搞定的 boot-mode 标志。M1 + 5/5 WS63 qtest 全程不回归(本轮纯调查,未改 QEMU 源码)。
 
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
