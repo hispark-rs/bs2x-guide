@@ -45,9 +45,14 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 
 ### 签名镜像格式(已破解 loaderboot)
 
-多段式:`0x000` 镜像头(魔数 `0x4bd2f01e`,头长 `0x40`)+ pad;`0x100` code-info 头(魔数 `0x4bd2f02d`,
-代码大小 = code-info+`0x24` 处的 u32);尾部是代码(`code_size` 字节,到 EOF)。loaderboot:`0x5c20` 字节 @ 文件 `0x300`。
-flashboot 用**另一种**格式(魔数=ImageId `0x4b1e3c1e`、code-info 作尾部 trailer `0x4b1e3c2d`),尚未破解。
+多段式:`0x000` 镜像头(头长 `0x40`)+ pad;`0x100` code-info 头(代码大小 = code-info+`0x24` 的 u32);尾部是代码。
+**loaderboot** 与 **flashboot 结构相同**,只是魔数不同:loaderboot 镜像头 `0x4bd2f01e` / code-info `0x4bd2f02d`(代码 `0x5c20` @ `0x300`);
+flashboot 镜像头 `0x4b1e3c1e`(=ImageId)/ code-info `0x4b1e3c2d`(代码 `0x8ab0` @ `0x300`)。`bs21-vendor-boot.sh` 两种都认。
+
+**flashboot 也跑起来了**:同样链接到 `0x40000`,跑 ~206 条(复位 → ULP_AON 时钟配置 `0x5702c***` → 清零/重定位循环 → 主代码 `0x40552`),
+随后在碰 **SFC(串行 Flash 控制器 @`0x90000000`)** 时早停(`j .` @0x40120)——它写 `0x509` 到 `0x90000210`、调 SFC 例程 `0x4097a`,
+但 SFC/flash 未建模 → 读回垃圾 → 停。flashboot 源码(`flashboot_init` + `usb_download` + `upgrade_version_check`)印证它早期就读 flash。
+**下一道边界 = SFC 模型**(`0x90000000`,v150),建好后 flashboot 才能载入应用并打印 banner。
 
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
