@@ -85,7 +85,16 @@ Flashboot Init! id = 0x0 / Power On / Reboot cause:0xF0F0 / Reboot count:0x0
 Flash Init ret = 0x80001341 / Load App Failed!
 ```
 
-**下一关 = SFC/flash 检测(Flash Init)**:flashboot 的 flash-init 调 SFC 检测例程 `0x434c2`(读 flash 设备结构 `0x20001d50` + SFC 状态 `0x90000300`),置位 DTCM 错误标志 `*(0x20001d69)` → 加载硬编码错误 `0x80001341`(@`0x42138`)→ "Load App Failed!"。`ws63-sfc` v150 对 RDID 回 W25Q16 ID,但不满足 flashboot 完整的 flash 检测/状态序列——把它补全(让错误标志不置位)是 flashboot 读取并跳转 app(XIP `0x90115000`)前的下一步。
+### flashboot 检测 flash、载入并跳转 app(2026-06-09)
+
+`Flash Init ret=0x80001341` 是 **flash ID 不匹配**:BS21 flashboot 的 flash 表是 **GigaDevice**(`sfc_config_info_porting.c`:GD25LE80),检测例程在 `0x42122` 把读到的 JEDEC ID 与 **`0x1460C8`**(mfr 0xC8 / type 0x60 / cap 0x14)比较;而共享 `ws63-sfc` 对 RDID 回的是 WS63 的 Winbond W25Q16(0x1560EF),故检测失败 → 置错误标志 → `0x80001341`。把 SFC 的 RDID JEDEC ID 做成**按机器可配**(新 `ws63_sfc_set_flash_id()`,WS63 默认 W25Q16;bs21.c 设 `0x1460C8`)。配合**完整 flash 镜像**(`bs21-build-flash.sh`,app @ XIP `0x90115000`):
+
+```
+Flashboot Init! / Power On / Reboot cause:0xF0F0 / Reboot count:0x0
+Flash Init ret = 0x0 / No need to upgrade / Jump to addr = 0x90115300
+```
+
+flashboot 的 **flash 检测 ✓、升级版本校验 ✓、载入并跳转 app @0x90115300 ✓**;app 的 RTOS 启动随即从 XIP 执行(设 `mtvec`、清 `mstatus`/`mie`、配 LOCI 自定义 CSR `0x7c2`/`0x7c3`、`gp` 指到 DTCM `0x2000369c`)。**flashboot 的任务已完成**。复现:`bs21-vendor-boot.sh flashboot_sign_a.bin 8 0x40000 <full-flash.bin>`(第 4 参数 = `bs21-build-flash.sh` 出的镜像)。BS2X 原厂启动链(loaderboot → flashboot → app)在 `-M bs21` 上已**端到端打通到 app 交接**;再往后跑完整 LiteOS BLE/SLE app 是更大的连接性工程(全内存图 / RAM 初始化 / 全外设)。WS63 5/5 + BS21 M1 不回归。
 
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
