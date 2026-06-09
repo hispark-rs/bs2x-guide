@@ -49,6 +49,15 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 代码大小 = code-info+`0x24` 处的 u32);尾部是代码(`code_size` 字节,到 EOF)。loaderboot:`0x5c20` 字节 @ 文件 `0x300`。
 flashboot 用**另一种**格式(魔数=ImageId `0x4b1e3c1e`、code-info 作尾部 trailer `0x4b1e3c2d`),尚未破解。
 
+### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
+
+BS21 ROM 调用拦截器已落地(镜像 `ws63_rom_call`,按不相交 PC 区间分发):模拟 BS2X 启动阶段调用的 secure-libc
+(`memset_s 0x3d80c`、`memcpy_s 0x3e07e`、`memmove_s 0x3e95c`、`*printf_s @0x3ef..`;printf 复用 `ws63_vformat`)。
+**已验证**:`scripts/bs21-rom-call-test.sh` —— guest `jalr` 到 `0x3d80c` 被拦截、memset 生效、回到 `ra`,串口打印 `XA`,**PASS**。
+WS63 不回归(5/5 qtest + M1)。
+> **关于 loaderboot**:它**完全不调 ROM**(从不执行 0x40000 以下),所以 `bs21_rom_call` 不改变它的行为——它本就停在下载模式空转。
+> `bs21_rom_call` 服务的是后续阶段(flashboot/app),那些才大量调 secure-libc。
+
 ### 已核实的事实与剩余边界:
 
 **已就位的地基**
