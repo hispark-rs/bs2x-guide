@@ -1,4 +1,4 @@
-# 第 5 章 QEMU `-M bs21` 与里程碑 1
+# 第 5 章 QEMU `-M bs21` / `-M bs22` / `-M bs20` 与里程碑 1
 
 ## 5.1 里程碑 1（已达成）
 
@@ -30,7 +30,41 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 # => BS21 SMOKE TEST: PASS
 ```
 
-## 5.4 原厂固件在 QEMU 上（loaderboot 已跑起来）
+## 5.4 BS2X 机器家族：`-M bs21` / `-M bs22` / `-M bs20`
+
+BS2X 是一个**芯片家族**。三款都用同一颗 riscv31 核 + 同一份 `bs2x-pac`，共享同一套**外设基址**
+（`platform_core.h`：UART0 `0x5208_1000`、GPIO0 `0x5701_0000`、TIMER `0x5200_2000`）与**中断号**
+（`chip_core_irq.h`：GPIO_0=34、UART0=39…）。所以三个机器都**复用 `ws63.c` 的设备模型**，只在 L2RAM 大小上分叉：
+
+| 机器 | L2RAM | M1 固件 | 说明 |
+|------|-------|---------|------|
+| `-M bs21` | 160K | `examples/bs21` | 完整机器（另带 vendor-boot：eFUSE/SFC/ROM 等，跑原厂 C SDK + tcxo sample，见 §5.5+） |
+| `-M bs22` | 160K | `examples/bs21`（复用） | 最小机器。**与 bs21 寄存器/内存逐字节相同** → 直接跑 bs21 的二进制，不另建 `chip-bs22` |
+| `-M bs20` | **128K** | `examples/bs20` | 最小机器。唯一真分叉：L2RAM 小 32K。需**自带 128K memory.x**（栈顶 `0x12_0000`），160K 固件会溢出 |
+
+- **bs22 ≡ bs21**（M1 层）：外设/中断/内存图逐字节相同，故 `chip-bs22` 会是纯复制 → 不做；`bs22-smoke-test.sh` 直接用 `examples/bs21` 的二进制。
+- **bs20 是真分叉**：仅 L2RAM 128K（对 bs21e/bs22 的 160K）。其余全同，故 `examples/bs20` 仍用 `chip-bs21`（=bs2x 家族）HAL，只换 memory.x（SRAM `0x2_0000`、栈顶 `0x12_0000`）。
+- 最小机器（bs22/bs20）= `bs21.c` 砍到 M1 子集：CPU + 内存 + UART×3 + GPIO + TIMER + TCXO + LOCI intc + 吸收器；**不含** vendor-C-SDK 专用的 eFUSE/SFC/clk32k/ROM 签名/flash1（那些属各芯片的原厂启动，后续工程）。
+
+复现：
+
+```bash
+# bs22（复用 bs21 固件，160K）
+cargo build --manifest-path examples/bs21/Cargo.toml --release
+WS63_RS=/path/to/ws63-rs ./scripts/bs22-smoke-test.sh   # => BS22 SMOKE TEST: PASS
+
+# bs20（128K 固件）
+cargo build --manifest-path examples/bs20/Cargo.toml --release
+WS63_RS=/path/to/ws63-rs ./scripts/bs20-smoke-test.sh   # => BS20 SMOKE TEST: PASS
+```
+
+> 注：QEMU 对越界（未映射）访问是**静默吞掉**而非硬陷阱，故一个 160K 的 bs21 二进制在 `-M bs20` 上**也"像是"能跑**——
+> 128K 约束由机器的 `default_ram_size` 建模、并由 bs20 固件遵守，而非靠陷阱强制。再加第 4 款（如 bs26）的判据：
+> RAM/基址与某款相同 → 直接克隆机器；RAM 不同 → 克隆机器 + 一份按芯片的 memory.x 固件。
+
+机器注册：`patches/v10.0.0/0004`（bs21）/`0006`（bs22）/`0007`（bs20），均 `CONFIG_BS2x select WS63`，仅 v10.0.0。
+
+## 5.5 原厂固件在 QEMU 上（loaderboot 已跑起来）
 
 目标:像 WS63 那样在 `-M ws63` 跑厂商 C SDK 固件,在 `-M bs21` 上跑 **BS2X 原厂固件**。
 
@@ -151,6 +185,6 @@ WS63 不回归(5/5 qtest + M1)。
 
 **路线(镜像 WS63 的 csdk-on-qemu 之旅)**:① 从 `librom_callback.a`/符号表提取 BS21 ROM 表 → 在 `bs21.c` 注册 ROM-ABI 回调(机器侧,复用 0001 重构的框架);② 解析签名镜像头得到装载地址、或从 SDK 源构建出 ELF fixture;③ 补 SFC + mask-ROM 桩。M1 已证明 CPU+内存+UART+GPIO+xlinx 这条链是通的;原厂固件差的就是 ROM 表 + 镜像装载。
 
-## 5.5 其它后续（随连接性）
+## 5.6 其它后续（随连接性）
 
 全外设 64 MHz 时钟树对齐、BLE/SLE 厂商 blob、`BS2X.svd` 余下外设(NFC、GADC 的 AFE/PMU/DIAG 子块、电源/时钟控制块)补全。
