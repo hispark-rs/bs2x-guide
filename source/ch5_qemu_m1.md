@@ -100,6 +100,12 @@ flashboot 的 **flash 检测 ✓、升级版本校验 ✓、载入并跳转 app 
 
 flashboot 跳到 app 后,LiteOS 启动只跑 21 条就 trap(mcause=2)在 `.data` 拷贝循环的 `prefd`(`0x0003300b`)上——xlinx opcode 0x0b funct3=3,一条缓存预取提示,解码器原把全部 0x0b 当 ldmia/stmia(funct3 0/1),prefd 匹配不到寄存器位 → illegal → 跳到 app 的 `mtvec`(0x44330,ITCM)跑到 flashboot 残留 → 空转。给 opcode 0x0b 加 funct3 分派:**f3 2/3 = pref/prefd → NOP**(预取无体系结构副作用),f3 0/1 仍是 ldmia/stmia。这样 app 的 `ldmia`/`stmia` 块拷贝跑通,app 执行 **934 条**真实 LiteOS 启动(拷 `.data` flash→DTCM、设 gp/sp、早期 init),跑进它的 **init-call 表**(11 个函数指针 @0x90115a10..0x90115a3c)。**下一关**:init `table[9]`(0x90118a3a,一个 LiteOS 任务/线程注册——入口 0x90118cfe、栈 1536、优先级 31,经创建器 0x90118a2a)返回错误 **0x2000209** → app 打日志后停在 `0x90128c62 (j .)`。这已是 LiteOS 内核 bring-up(任务创建/调度器/内存池,再到 BLE/SLE 栈)——属更大的连接性工程,每个 init level 都要喂饱其子系统。WS63 5/5 + BS21 M1 不回归。
 
+### xlinx muliadd 立即数修复 → app 跑过 LiteOS 任务创建,跑完内核 init(2026-06-09)
+
+init-call `table[9]` 卡死(`LOS_TaskResume` 返回任务 errno `0x2000209`)的根因是**解码器 bug**,不是缺子系统:`LOS_TaskResume` 用 xlinx `muliadd s0,s0,a0,92` 把 TCB 数组按 `base + id*92` 索引,但解码器把立即数的 funct7 字段掩成 5 位(`& 0x1f`)而非完整 7 位(`& 0x7f`)——立即数 = `(funct7<<1) | bit14`(最高 8 位),故 >63 的值被截断(92→28)。`TCB[1]` 算成 `base+28` 而非 `base+92` → resume 读错 TCB(status=0 非 SUSPENDED)→ `0x2000209`。用 app 里 82 条立即数 64..192 的 `muliadd` 验证:旧 5 位掩码 82 条全错,7 位掩码 82 条全对。
+
+修好后 app **跑过任务创建、跑完整个 LiteOS 内核 init**(1663 条 app 指令,原 934),到达 app 自己的 reboot/idle 路径(`APP|Reboot core:%d cause 0x%x`,停在 0x90126206)。**下一边界**:该路径读 ULP_AON 寄存器(`*0x5702c0f0` vs 0x10000,吸收器回 0),且看着是 app/多核相关(`core:2` ≈ BT 从核)——更深的 app/连接性层。WS63 5/5 + BS21 M1 不回归。
+
 ### `bs21_rom_call` 已实现(patches/v10.0.0/0005)
 
 BS21 ROM 调用拦截器已落地(镜像 `ws63_rom_call`,按不相交 PC 区间分发):模拟 BS2X 启动阶段调用的 secure-libc
