@@ -13,8 +13,14 @@
 ## 5.2 `-M bs21` 机器（`hisi-riscv-qemu`）
 
 `bs21.c` 复用 `ws63.c` 的设备模型（同版本 IP，经 `hisi_riscv31.h` 暴露）：CPU（RV32IMFC）、BS21 内存图、
-自定义 UART×3、一个 GPIO bank、TIMER、TCXO、LOCI 中断控制器 + 自定义 CSR、两个 MMIO 窗吸收器。
+自定义 UART×3、一个 GPIO bank、TIMER、TCXO、LOCI 中断控制器 + 自定义 CSR、MMIO 窗吸收器。
 `-M ws63` / `-cpu ws63` 的机器/设备符号保持不变（WS63 自己的芯片）。
+
+**功能外设模型（已超出 M1）**：在 M1 子集之上，`bs21.c` 现在还映射 **BS2X 全部功能外设**的设备模型，
+每个都被对应的 `chip-bs21` HAL 驱动 + `examples/bs21` 示例**功能验证**（不只是寄存器可访问，而是驱动真跑通、读回已知值）——
+`ws63_create_spi_loopback`（SPI TX→RX 环回）、`_gadc`（13-bit ADC 转换）、`_i2c`（DesignWare，从机 `0x50`）、
+`_keyscan` + `_qdec`（HID）、`_rtc` + `_trng`（时钟/随机数）、`_wdt`、`_dma`（mem-to-mem）、`_pdm`（音频 UP-FIFO 采集）、
+`_usb`（DWC2 OTG 设备枚举）。逐外设的 IP 版本、bs2x-pac 是否需改、QEMU 验证点见 **§3.5**。
 
 ## 5.3 复现
 
@@ -25,9 +31,11 @@ cargo build --manifest-path bs21-examples/Cargo.toml
 # 2) 构建带 -M bs21 的 QEMU
 cd hisi-riscv-qemu && ./scripts/build.sh
 
-# 3) M1 验收
+# 3) M1 + 全功能外设验收（冒烟脚本断言每个示例读回已知值）
 WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 # => BS21 SMOKE TEST: PASS
+#    断言：uart_hello 横幅 + blinky GPIO 翻转 + spi_loopback + gadc_read + i2c_scan
+#    + hid_demo（keyscan/qdec/pdm）+ clock_rng（rtc/trng）+ pwm_wdt + dma_mem（+usb 枚举）
 ```
 
 ## 5.4 BS2X 机器家族：`-M bs21` / `-M bs22` / `-M bs20`
@@ -39,12 +47,15 @@ BS2X 是一个**芯片家族**。三款都用同一颗 riscv31 核 + 同一份 `
 | 机器 | L2RAM | M1 固件 | 说明 |
 |------|-------|---------|------|
 | `-M bs21` | 160K | `examples/bs21` | 完整机器（另带 vendor-boot：eFUSE/SFC/ROM 等，跑原厂 C SDK + tcxo sample，见 §5.5+） |
-| `-M bs22` | 160K | `examples/bs21`（复用） | 最小机器。**与 bs21 寄存器/内存逐字节相同** → 直接跑 bs21 的二进制，不另建 `chip-bs22` |
-| `-M bs20` | **128K** | `examples/bs20` | 最小机器。唯一真分叉：L2RAM 小 32K。需**自带 128K memory.x**（栈顶 `0x12_0000`），160K 固件会溢出 |
+| `-M bs22` | 160K | `examples/bs21`（复用） | **与 bs21 寄存器/内存逐字节相同** → 直接跑 bs21 的二进制，不另建 `chip-bs22` |
+| `-M bs20` | **128K** | `examples/bs20` | 唯一真分叉：L2RAM 小 32K。需**自带 128K memory.x**（栈顶 `0x12_0000`），160K 固件会溢出 |
 
-- **bs22 ≡ bs21**（M1 层）：外设/中断/内存图逐字节相同，故 `chip-bs22` 会是纯复制 → 不做；`bs22-smoke-test.sh` 直接用 `examples/bs21` 的二进制。
+- **三台机器都映射全部功能外设模型**：SPI/GADC/I2C/KEYSCAN/QDEC/RTC/TRNG/WDT/DMA/PDM/USB（各 11 个 `ws63_create_*`），
+  三套冒烟脚本都断言 spi_loopback/gadc_read/i2c_scan/hid_demo/clock_rng/pwm_wdt/dma_mem 读回已知值（见 §3.5 / §5.2）。
+- **bs22 ≡ bs21**（外设/中断/内存图逐字节相同）：故 `chip-bs22` 会是纯复制 → 不做；`bs22-smoke-test.sh` 直接用 `examples/bs21` 的二进制。
 - **bs20 是真分叉**：仅 L2RAM 128K（对 bs21e/bs22 的 160K）。其余全同，故 `examples/bs20` 仍用 `chip-bs21`（=bs2x 家族）HAL，只换 memory.x（SRAM `0x2_0000`、栈顶 `0x12_0000`）。
-- 最小机器（bs22/bs20）= `bs21.c` 砍到 M1 子集：CPU + 内存 + UART×3 + GPIO + TIMER + TCXO + LOCI intc + 吸收器；**不含** vendor-C-SDK 专用的 eFUSE/SFC/clk32k/ROM 签名/flash1（那些属各芯片的原厂启动，后续工程）。
+- 三台机器的差别仅在 **vendor-C-SDK 专用启动设施**（eFUSE/SFC/clk32k/ROM 签名/flash1）：那套只在 `-M bs21` 上（跑原厂 C SDK，见 §5.5+），
+  bs22/bs20 不含；功能外设模型 + M1 子集（CPU + 内存 + UART×3 + GPIO + TIMER + TCXO + LOCI intc + 吸收器）三台都有。
 
 复现：
 
