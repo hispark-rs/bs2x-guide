@@ -14,4 +14,4 @@ bs2x-guide  (本仓，配套用户指南)
 - 同族对照：`ws63-guide`（WS63 用户指南）。
 - 配套代码：`bs2x-pac`、`hisi-riscv-hal`(`chip-bs21`)、`hisi-riscv-qemu`(`-M bs21`)、`bs21-examples`。
 
-详见伞仓 <https://github.com/sanchuanhehe/hisi-riscv-rs>。
+详见伞仓 <https://github.com/hispark-rs/hisi-riscv-rs>。

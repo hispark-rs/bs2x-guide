@@ -58,7 +58,7 @@ html_language = 'zh_CN'
 html_permalinks_icon = '#'
 
 html_theme_options = {
-    'repository_url': 'https://github.com/sanchuanhehe/ws63-guide',
+    'repository_url': 'https://github.com/hispark-rs/ws63-guide',
     'repository_branch': 'main',
     'path_to_docs': 'source',
     'use_edit_page_button': True,

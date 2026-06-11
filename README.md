@@ -2,7 +2,7 @@
 
 HiSilicon **BS21 / BS2X**（BLE 5.4 + SLE/星闪 NearLink，无 Wi-Fi）系列 SoC 的用户指南，
 是 `bs2x-pac` / `hisi-riscv-hal`(`chip-bs21`) / `hisi-riscv-qemu`(`-M bs21`) 这套 Rust + QEMU
-工具链的配套文档。与 [`ws63-guide`](https://github.com/sanchuanhehe/ws63-guide) 对等。
+工具链的配套文档。与 [`ws63-guide`](https://github.com/hispark-rs/ws63-guide) 对等。
 
 真值源：HiSilicon `fbb_bs2x` C SDK（以 csdk 为唯一标准）。
 
