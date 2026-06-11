@@ -7,9 +7,10 @@
 - 规格：CPU **64 MHz**、FLASH **1 MB**、RAM **128 KB（BS20）/ 160 KB（BS21E·BS22）**、
   SLE 1K/2K/4K、**USB 支持**、**无 Wi-Fi**（仅 BT/BLE 5.4 + SLE/GLE）。
 - 主控：HiSilicon RISC-V32 + 硬浮点（编译器 `cc_riscv32_musl_fp`），自定义核 **「linx131」**
-  —— WS63 的 `xlinx`/`riscv31` 的同族变体。另有一个 **BT 从核**——已对照 SDK 核实:
-  `platform_core.h` 的 `slave_cpu_t { SLAVE_CPU_BT, SLAVE_CPU_MAX_NUM }`（恰一个从核 = BT），
-  另有 OTP `..._LOCKED_CORES_BT_CORE_BIT`。Rust 栈目标是**应用主核**。
+  —— WS63 的 `xlinx`/`riscv31` 的同族变体。**单核**——经对照 SDK 核实,BS21 只有应用核：
+  `platform_core.h` 的 `slave_cpu_t { SLAVE_CPU_BT, SLAVE_CPU_MAX_NUM }` 是一个**零 `.c` 引用的死枚举**
+  （早期曾误读为「BT 从核」,后已纠正）；BLE/SLE 的 **host 与 controller 都作为 LiteOS 任务跑在应用核上**,
+  无独立 BT 核、无核间 IPC。运行时出现的 `core:2` 复位是 **APPS_CORE**(应用核)而非 BT 核。Rust 栈目标即此应用核。
 
 ## 1.2 ISA 与工具链
 

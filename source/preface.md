@@ -22,6 +22,12 @@ BS21 与 WS63 同属 HiSilicon **「HimiDeer」riscv31 核**：
 因此 Rust 栈把「芯片中立」部分统一为 `hisi-riscv-*`（hal/rt/qemu），「按芯片」部分保留
 `bs2x-*`（pac/svd/guide）与 `ws63-*`。
 
+在 monorepo（`hisi-riscv-rs`）布局上，**芯片专属的 PAC crate 归并在 `crates/pac/` 下**
+（`crates/pac/ws63-pac`、`crates/pac/bs2x-pac`，各自内嵌其 `*-svd` 生成源），芯片中立的
+`hisi-riscv-hal` / `hisi-riscv-rt` 在 `crates/` 顶层。这样「可发布库」整组都留在 `crates/` 内，
+又把生成式 PAC 与手写 crate 分开；命名用 `crates/pac/`（而非 `crates/chips/`）以避开与顶层
+`chips/`（放 guide/rf/flashboot 等芯片支撑材料）重名。
+
 ## 里程碑
 
 **M1（已达成）**：BS21 的 `blinky` + `uart_hello`（标准 RV32IMFC、`--features chip-bs21`）
