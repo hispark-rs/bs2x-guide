@@ -38,24 +38,29 @@ WS63_RS=/path/to/hisi-riscv-rs ./scripts/bs21-smoke-test.sh
 #    + hid_demo（keyscan/qdec/pdm）+ clock_rng（rtc/trng）+ pwm_wdt + dma_mem（+usb 枚举）
 ```
 
-## 5.4 BS2X 机器家族：`-M bs21` / `-M bs22` / `-M bs20`
+## 5.4 BS2X 机器家族：`-M bs21` / `-M bs21e` / `-M bs22` / `-M bs20`
 
-BS2X 是一个**芯片家族**。三款都用同一颗 riscv31 核 + 同一份 `bs2x-pac`，共享同一套**外设基址**
-（`platform_core.h`：UART0 `0x5208_1000`、GPIO0 `0x5701_0000`、TIMER `0x5200_2000`）与**中断号**
-（`chip_core_irq.h`：GPIO_0=34、UART0=39…）。所以三个机器都**复用 `ws63.c` 的设备模型**，只在 L2RAM 大小上分叉：
+BS2X 是一个**芯片家族**（SKU：BS20 / BS21E / BS22；本指南的「bs21」即 **BS21E**）。四个机器都用同一颗
+riscv31 核 + 同一份 `bs2x-pac`，共享同一套**外设基址**（`platform_core.h`：UART0 `0x5208_1000`、
+GPIO0 `0x5701_0000`、TIMER `0x5200_2000`）与**中断号**（`chip_core_irq.h`：GPIO_0=34、UART0=39、
+TIMER_0=53…）。所以都**复用 `ws63.c` 的设备模型**，只在 L2RAM 大小与机器名上分叉：
 
 | 机器 | L2RAM | M1 固件 | 说明 |
 |------|-------|---------|------|
 | `-M bs21` | 160K | `examples/bs21` | 完整机器（另带 vendor-boot：eFUSE/SFC/ROM 等，跑原厂 C SDK + tcxo sample，见 §5.5+） |
+| `-M bs21e` | 160K | `examples/bs21`（复用） | **BS21E SKU 的显式机器名**（即我们的 bs21）。干净 M1 + 全功能外设，不含 vendor-boot——与 `-M bs22` 同形 |
 | `-M bs22` | 160K | `examples/bs21`（复用） | **与 bs21 寄存器/内存逐字节相同** → 直接跑 bs21 的二进制，不另建 `chip-bs22` |
 | `-M bs20` | **128K** | `examples/bs20` | 唯一真分叉：L2RAM 小 32K。需**自带 128K memory.x**（栈顶 `0x12_0000`），160K 固件会溢出 |
 
-- **三台机器都映射全部功能外设模型**：SPI/GADC/I2C/KEYSCAN/QDEC/RTC/TRNG/WDT/DMA/PDM/USB（各 11 个 `ws63_create_*`），
-  三套冒烟脚本都断言 spi_loopback/gadc_read/i2c_scan/hid_demo/clock_rng/pwm_wdt/dma_mem 读回已知值（见 §3.5 / §5.2）。
-- **bs22 ≡ bs21**（外设/中断/内存图逐字节相同）：故 `chip-bs22` 会是纯复制 → 不做；`bs22-smoke-test.sh` 直接用 `examples/bs21` 的二进制。
+- **四台机器都映射全部功能外设模型**：SPI/GADC/I2C/KEYSCAN/QDEC/RTC/TRNG/WDT/DMA/PDM/USB（各 11 个 `ws63_create_*`），
+  冒烟脚本都断言 spi_loopback/gadc_read/i2c_scan/hid_demo/clock_rng/pwm_wdt/dma_mem 读回已知值（见 §3.5 / §5.2）。
+- **bs21e ≡ bs22 ≡ bs21**（外设/中断/内存图逐字节相同，都 160K）：故无 `chip-bs22`/`chip-bs21e` Rust 构建——纯复制；
+  `bs21e-smoke-test.sh` / `bs22-smoke-test.sh` 直接用 `examples/bs21` 的二进制。`-M bs21e` 与 `-M bs22` 是为了把 SKU 名显式暴露给模板（`cargo generate` chip 选项），`cargo run` 据此选机器。
 - **bs20 是真分叉**：仅 L2RAM 128K（对 bs21e/bs22 的 160K）。其余全同，故 `examples/bs20` 仍用 `chip-bs21`（=bs2x 家族）HAL，只换 memory.x（SRAM `0x2_0000`、栈顶 `0x12_0000`）。
-- 三台机器的差别仅在 **vendor-C-SDK 专用启动设施**（eFUSE/SFC/clk32k/ROM 签名/flash1）：那套只在 `-M bs21` 上（跑原厂 C SDK，见 §5.5+），
-  bs22/bs20 不含；功能外设模型 + M1 子集（CPU + 内存 + UART×3 + GPIO + TIMER + TCXO + LOCI intc + 吸收器）三台都有。
+- 机器间差别仅在 **vendor-C-SDK 专用启动设施**（eFUSE/SFC/clk32k/ROM 签名/flash1）：那套只在 `-M bs21` 上（跑原厂 C SDK，见 §5.5+），
+  bs21e/bs22/bs20 不含；功能外设模型 + M1 子集（CPU + 内存 + UART×3 + GPIO + TIMER + TCXO + LOCI intc + 吸收器）四台都有。
+- **嵌入式 async（embassy）**：`examples/bs21/embassy_multitask` 在 `-M bs21`/`bs21e`/`bs22` 上跑通（闹钟走 LOCI `TIMER_0`=53；
+  此前 QEMU `riscv_cpu_has_work` 漏了 LOCI pending → WFI 不唤醒，已在 fork 修复）。
 
 复现：
 
